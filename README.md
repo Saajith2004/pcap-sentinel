@@ -38,9 +38,9 @@ The screenshot below shows the tool analysing a sample PCAP file, displaying pro
 
 ### 2. Automated Testing
 
-ThreatNexus includes seven automated unit tests to verify the reliability of its core functionality. The tests cover packet analysis, TCP port scan detection, repeated DNS query detection, DNS query extraction, traffic to ports of interest, CSV report generation, and empty-capture handling.
+ThreatNexus includes 8 automated unit tests to verify the reliability of its core functionality. The tests covering packet analysis, DNS extraction, port-scan detection, traffic to ports of interest, CSV exports, and error handling.
 
-All seven unit tests passed successfully in the previously verified test run. Run the test command below after applying the rebranding changes to verify the current version.
+All 8 unit tests passed successfully in the previously verified test run. Run the test command below after applying the rebranding changes to verify the current version.
 
 ![ThreatNexus Automated Test Results](screenshots/threat-nexus-tests.png)
 
