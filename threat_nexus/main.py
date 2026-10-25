@@ -1,432 +1,255 @@
 """
-ThreatNexus - PCAP/PCAPNG Network Traffic Analyzer
+ThreatNexus
+A Python command-line tool for summarising packet captures and flagging
+simple indicators that warrant further investigation.
 
-Features:
-- Reads PCAP and PCAPNG captures supported by Scapy.
-- Counts common network protocols.
-- Summarizes IP communication pairs.
-- Extracts DNS queries.
-- Flags possible TCP port scans using a simple heuristic.
-- Flags repeated DNS queries using a simple heuristic.
-- Highlights traffic to selected TCP/UDP ports.
-- Exports four CSV reports.
-
-Usage:
-    python threat_nexus/main.py path/to/capture.pcap
-    python threat_nexus/main.py path/to/capture.pcap --output-dir reports
-
-This tool is intended for authorized network analysis and educational use.
-The detections are heuristic indicators, not proof of malicious activity.
+This tool is intended for defensive analysis and education. Findings are
+heuristics, not proof of malicious activity.
 """
 
 import argparse
 import csv
-import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
-from scapy.all import DNS, DNSQR, ICMP, IP, IPv6, TCP, UDP, rdpcap
+from scapy.layers.dns import DNS, DNSQR
+from scapy.layers.inet import IP, TCP, UDP, ICMP
+from scapy.layers.inet6 import IPv6
+from scapy.utils import PcapReader
 
-
-PROJECT_NAME = "ThreatNexus"
-
-PORTS_OF_INTEREST = {
-    22: "SSH",
-    23: "Telnet",
-    445: "SMB",
-    3389: "RDP",
-    4444: "Commonly used alternate service port",
-}
-
+PORTS_OF_INTEREST = {22, 23, 445, 3389, 4444}
 PORT_SCAN_THRESHOLD = 10
 REPEATED_DNS_THRESHOLD = 10
 
-
-def _packet_protocol(packet):
-    """Return a readable top-level protocol label for a packet."""
-    if TCP in packet:
-        return "TCP"
-    if UDP in packet:
-        return "UDP"
-    if ICMP in packet:
-        return "ICMP"
-    if DNS in packet:
-        return "DNS"
-    if IP in packet:
-        return "IPv4"
-    if IPv6 in packet:
-        return "IPv6"
-    return "Other"
+PROTOCOL_CSV_HEADER = ["protocol", "packet_count"]
+IP_CSV_HEADER = ["source_ip", "destination_ip", "packet_count"]
+DNS_CSV_HEADER = ["domain", "query_count"]
+FINDINGS_CSV_HEADER = [
+    "rule", "severity", "source_ip", "destination_ip", "evidence",
+    "recommendation",
+]
 
 
-def analyse_packets(packets):
-    """
-    Analyse an iterable of Scapy packets and return structured results.
-
-    The returned dictionary contains:
-        packet_count: total packets analysed
-        protocol_counts: counts by protocol
-        communications: packet counts for each source/destination IP pair
-        dns_queries: count for each extracted DNS query name
-        findings: heuristic findings
-    """
+def analyse_pcap(pcap_path: Path) -> dict[str, Any]:
+    """Analyse a PCAP/PCAPNG file and return counters plus heuristic findings."""
     packet_count = 0
-    protocol_counts = Counter()
-    communications = Counter()
-    dns_queries = Counter()
-    tcp_destination_ports = defaultdict(set)
-    port_traffic = Counter()
-    findings = []
+    ip_pairs: Counter[tuple[str, str]] = Counter()
+    protocols: Counter[str] = Counter()
+    dns_queries: Counter[str] = Counter()
+    tcp_ports_by_pair: dict[tuple[str, str], set[int]] = {}
+    port_findings: Counter[tuple[str, str, int, str]] = Counter()
 
-    for packet in packets:
-        packet_count += 1
+    with PcapReader(str(pcap_path)) as capture:
+        for packet in capture:
+            packet_count += 1
 
-        protocol = _packet_protocol(packet)
-        protocol_counts[protocol] += 1
+            if IP in packet:
+                protocols["IPv4"] += 1
+                ip_pairs[(packet[IP].src, packet[IP].dst)] += 1
+            elif IPv6 in packet:
+                protocols["IPv6"] += 1
+                ip_pairs[(packet[IPv6].src, packet[IPv6].dst)] += 1
 
-        source_ip = None
-        destination_ip = None
+            if TCP in packet:
+                protocols["TCP"] += 1
+            if UDP in packet:
+                protocols["UDP"] += 1
+            if ICMP in packet:
+                protocols["ICMP"] += 1
 
-        if IP in packet:
-            source_ip = packet[IP].src
-            destination_ip = packet[IP].dst
-        elif IPv6 in packet:
-            source_ip = packet[IPv6].src
-            destination_ip = packet[IPv6].dst
+            if IP in packet and TCP in packet:
+                src, dst = packet[IP].src, packet[IP].dst
+                port = int(packet[TCP].dport)
+                tcp_ports_by_pair.setdefault((src, dst), set()).add(port)
+                if port in PORTS_OF_INTEREST:
+                    port_findings[(src, dst, port, "TCP")] += 1
+            elif IP in packet and UDP in packet:
+                src, dst = packet[IP].src, packet[IP].dst
+                port = int(packet[UDP].dport)
+                if port in PORTS_OF_INTEREST:
+                    port_findings[(src, dst, port, "UDP")] += 1
 
-        if source_ip and destination_ip:
-            communications[(source_ip, destination_ip)] += 1
+            if DNS in packet:
+                protocols["DNS"] += 1
+                dns = packet[DNS]
+                if dns.qr == 0 and DNSQR in dns:
+                    query = dns[DNSQR].qname
+                    if isinstance(query, bytes):
+                        query = query.decode("utf-8", errors="replace")
+                    dns_queries[query.rstrip(".")] += 1
 
-        # Record TCP destination ports by source/destination IP pair.
-        if TCP in packet and source_ip and destination_ip:
-            destination_port = int(packet[TCP].dport)
-            tcp_destination_ports[(source_ip, destination_ip)].add(
-                destination_port
-            )
+    findings: list[dict[str, str]] = []
 
-        # Track traffic to selected TCP and UDP destination ports.
-        if TCP in packet:
-            destination_port = int(packet[TCP].dport)
-            if destination_port in PORTS_OF_INTEREST:
-                port_traffic[
-                    (source_ip or "Unknown", destination_port, "TCP")
-                ] += 1
-
-        if UDP in packet:
-            destination_port = int(packet[UDP].dport)
-            if destination_port in PORTS_OF_INTEREST:
-                port_traffic[
-                    (source_ip or "Unknown", destination_port, "UDP")
-                ] += 1
-
-        # Robust DNS query extraction. DNS qname is commonly bytes in Scapy.
-        if DNS in packet:
-            dns_layer = packet[DNS]
-            query_flag = getattr(dns_layer, "qr", None)
-            query_layer = getattr(dns_layer, "qd", None)
-
-            if query_flag == 0 and query_layer is not None:
-                query_name = getattr(query_layer, "qname", None)
-
-                # Handle a DNS question list if the capture has multiple
-                # questions in a single DNS message.
-                questions = []
-                if query_name:
-                    questions.append(query_name)
-                else:
-                    try:
-                        for question in query_layer:
-                            name = getattr(question, "qname", None)
-                            if name:
-                                questions.append(name)
-                    except (TypeError, AttributeError):
-                        pass
-
-                for query_name in questions:
-                    if isinstance(query_name, bytes):
-                        query_name = query_name.decode(
-                            "utf-8", errors="replace"
-                        )
-
-                    query_name = str(query_name).rstrip(".").strip()
-                    if query_name:
-                        dns_queries[query_name] += 1
-
-    # Heuristic: a single source/destination pair touching many TCP
-    # destination ports may indicate port scanning.
-    for (source_ip, destination_ip), destination_ports in (
-        tcp_destination_ports.items()
-    ):
-        if len(destination_ports) >= PORT_SCAN_THRESHOLD:
-            findings.append(
-                {
-                    "severity": "Medium",
-                    "rule": "possible_tcp_port_scan",
-                    "source_ip": source_ip,
-                    "destination_ip": destination_ip,
-                    "details": (
-                        f"{len(destination_ports)} distinct TCP destination "
-                        f"ports observed from {source_ip} to {destination_ip}."
-                    ),
-                    "evidence_count": len(destination_ports),
-                }
-            )
-
-    # Heuristic: many occurrences of the same DNS query may be noteworthy.
-    for query_name, count in dns_queries.items():
-        if count >= REPEATED_DNS_THRESHOLD:
-            findings.append(
-                {
-                    "severity": "Low",
-                    "rule": "repeated_dns_query",
-                    "source_ip": "",
-                    "destination_ip": "",
-                    "details": (
-                        f"DNS query '{query_name}' occurred {count} times."
-                    ),
-                    "evidence_count": count,
-                }
-            )
-
-    # Informational finding for traffic targeting selected service ports.
-    for (source_ip, destination_port, transport), count in port_traffic.items():
-        service_name = PORTS_OF_INTEREST[destination_port]
-        findings.append(
-            {
-                "severity": "Informational",
-                "rule": "traffic_to_interesting_port",
-                "source_ip": source_ip,
-                "destination_ip": "",
-                "details": (
-                    f"{count} {transport} packet(s) from {source_ip} targeted "
-                    f"port {destination_port} ({service_name})."
+    for (src, dst), ports in tcp_ports_by_pair.items():
+        if len(ports) >= PORT_SCAN_THRESHOLD:
+            findings.append({
+                "rule": "possible_tcp_port_scan",
+                "severity": "medium",
+                "source_ip": src,
+                "destination_ip": dst,
+                "evidence": f"Contacted {len(ports)} distinct TCP destination ports",
+                "recommendation": (
+                    "Review the connection pattern and destination ports. "
+                    "This is an indicator, not proof, of scanning."
                 ),
-                "evidence_count": count,
-            }
-        )
+            })
 
-    # Stable, predictable output order makes reports easier to compare.
-    findings.sort(
-        key=lambda finding: (
-            finding["severity"],
-            finding["rule"],
-            finding["source_ip"],
-            finding["destination_ip"],
-            finding["details"],
-        )
-    )
+    for domain, count in dns_queries.items():
+        if count >= REPEATED_DNS_THRESHOLD:
+            findings.append({
+                "rule": "repeated_dns_query",
+                "severity": "low",
+                "source_ip": "",
+                "destination_ip": "",
+                "evidence": f"Domain queried {count} times: {domain}",
+                "recommendation": "Verify whether repeated lookups are expected.",
+            })
+
+    for (src, dst, port, protocol), count in port_findings.items():
+        findings.append({
+            "rule": "traffic_to_port_of_interest",
+            "severity": "informational",
+            "source_ip": src,
+            "destination_ip": dst,
+            "evidence": (
+                f"Observed {count} packet(s) to "
+                f"{protocol} destination port {port}"
+            ),
+            "recommendation": (
+                "Validate whether the service is expected in the environment."
+            ),
+        })
 
     return {
         "packet_count": packet_count,
-        "protocol_counts": dict(protocol_counts),
-        "communications": dict(communications),
-        "dns_queries": dict(dns_queries),
+        "ip_pairs": ip_pairs,
+        "protocols": protocols,
+        "dns_queries": dns_queries,
         "findings": findings,
     }
 
 
-def write_csv(file_path, fieldnames, rows):
-    """Write rows to a CSV file, including headers for empty reports."""
-    file_path = Path(file_path)
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with file_path.open("w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(
-            csv_file,
-            fieldnames=fieldnames,
-            extrasaction="ignore",
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def export_reports(results, output_dir="reports"):
-    """Export analysis results to four CSV files and return their paths."""
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    protocol_rows = [
-        {"protocol": protocol, "packet_count": count}
-        for protocol, count in sorted(
-            results["protocol_counts"].items(),
-            key=lambda item: item[0],
-        )
+def export_csv(results: dict[str, Any], output_dir: Path, capture_name: str) -> list[Path]:
+    """Export protocol, IP communication, DNS query, and findings CSV reports."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_paths = [
+        output_dir / f"{capture_name}_protocols.csv",
+        output_dir / f"{capture_name}_ip_communications.csv",
+        output_dir / f"{capture_name}_dns_queries.csv",
+        output_dir / f"{capture_name}_findings.csv",
     ]
 
-    communication_rows = [
-        {
-            "source_ip": source_ip,
-            "destination_ip": destination_ip,
-            "packet_count": count,
-        }
-        for (source_ip, destination_ip), count in sorted(
-            results["communications"].items(),
-            key=lambda item: (item[0][0], item[0][1]),
-        )
-    ]
+    with report_paths[0].open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(PROTOCOL_CSV_HEADER)
+        for protocol, count in sorted(results["protocols"].items()):
+            writer.writerow([protocol, count])
 
-    dns_rows = [
-        {"query_name": query_name, "query_count": count}
-        for query_name, count in sorted(
-            results["dns_queries"].items(),
-            key=lambda item: item[0].lower(),
-        )
-    ]
+    with report_paths[1].open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(IP_CSV_HEADER)
+        for (source, destination), count in results["ip_pairs"].most_common():
+            writer.writerow([source, destination, count])
 
-    finding_fields = [
-        "severity",
-        "rule",
-        "source_ip",
-        "destination_ip",
-        "details",
-        "evidence_count",
-    ]
+    with report_paths[2].open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(DNS_CSV_HEADER)
+        for domain, count in results["dns_queries"].most_common():
+            writer.writerow([domain, count])
 
-    report_paths = {
-        "protocols": output_path / "protocols.csv",
-        "communications": output_path / "ip_communications.csv",
-        "dns_queries": output_path / "dns_queries.csv",
-        "findings": output_path / "findings.csv",
-    }
-
-    write_csv(
-        report_paths["protocols"],
-        ["protocol", "packet_count"],
-        protocol_rows,
-    )
-    write_csv(
-        report_paths["communications"],
-        ["source_ip", "destination_ip", "packet_count"],
-        communication_rows,
-    )
-    write_csv(
-        report_paths["dns_queries"],
-        ["query_name", "query_count"],
-        dns_rows,
-    )
-    write_csv(
-        report_paths["findings"],
-        finding_fields,
-        results["findings"],
-    )
+    with report_paths[3].open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(FINDINGS_CSV_HEADER)
+        for finding in results["findings"]:
+            writer.writerow([finding[key] for key in FINDINGS_CSV_HEADER])
 
     return report_paths
 
 
-def analyse_capture(capture_path, output_dir="reports"):
-    """Read a capture file, analyse it, export reports, and return results."""
-    capture_path = Path(capture_path)
-
-    if not capture_path.is_file():
-        raise FileNotFoundError(f"Capture file not found: {capture_path}")
-
-    try:
-        packets = rdpcap(str(capture_path))
-    except Exception as exc:
-        raise ValueError(
-            f"Could not read capture file '{capture_path}': {exc}"
-        ) from exc
-
-    results = analyse_packets(packets)
-    results["capture_file"] = str(capture_path)
-    results["report_paths"] = export_reports(results, output_dir)
-    return results
-
-
-def print_summary(results):
-    """Print a readable summary of the analysis."""
-    print(f"\n{PROJECT_NAME} - Network Capture Analysis")
-    print("=" * 46)
-    print(f"Capture: {results.get('capture_file', '(in-memory packets)')}")
-    print(f"Packets analysed: {results['packet_count']}")
-
-    print("\nProtocol counts:")
-    if results["protocol_counts"]:
-        for protocol, count in sorted(results["protocol_counts"].items()):
-            print(f"  {protocol:<10} {count}")
-    else:
-        print("  No packets found.")
-
-    print("\nTop IP communication pairs:")
-    communications = sorted(
-        results["communications"].items(),
-        key=lambda item: item[1],
-        reverse=True,
-    )
-    if communications:
-        for (source_ip, destination_ip), count in communications[:10]:
-            print(f"  {source_ip} -> {destination_ip}: {count} packet(s)")
-    else:
-        print("  No IP communication pairs found.")
-
-    print("\nDNS queries:")
-    if results["dns_queries"]:
-        for query_name, count in sorted(
-            results["dns_queries"].items(),
-            key=lambda item: item[1],
-            reverse=True,
-        )[:20]:
-            print(f"  {query_name}: {count}")
-    else:
-        print("  No DNS queries extracted.")
-
-    print("\nFindings:")
-    if results["findings"]:
-        for finding in results["findings"]:
-            print(
-                f"  [{finding['severity']}] {finding['rule']}: "
-                f"{finding['details']}"
-            )
-    else:
-        print("  No heuristic findings generated.")
-
-    if results.get("report_paths"):
-        print("\nCSV reports written:")
-        for name, path in results["report_paths"].items():
-            print(f"  {name}: {path}")
-
-    print(
-        "\nNote: findings are heuristic indicators and require validation; "
-        "they are not proof of malicious activity."
-    )
-
-
-def build_argument_parser():
-    """Create the command-line argument parser."""
+def main() -> None:
+    """Parse arguments, analyse the capture, display results, and export CSVs."""
     parser = argparse.ArgumentParser(
-        prog="threat-nexus",
-        description="Analyse a PCAP/PCAPNG capture with ThreatNexus.",
+        description="ThreatNexus - Network Packet Analysis Tool",
+        epilog=(
+            "Note: findings are heuristic indicators and do not prove malicious "
+            "activity. Analyse only captures you are authorised to inspect."
+        ),
     )
-    parser.add_argument(
-        "capture",
-        help="Path to a PCAP or PCAPNG capture file.",
-    )
+    parser.add_argument("pcap_file", help="Path to a PCAP or PCAPNG capture")
     parser.add_argument(
         "--output-dir",
         default="reports",
-        help="Directory for CSV reports (default: reports).",
+        help="Directory for CSV reports (default: reports)",
     )
-    return parser
+    args = parser.parse_args()
+    pcap_path = Path(args.pcap_file)
 
-
-def main(argv=None):
-    """CLI entry point."""
-    parser = build_argument_parser()
-    args = parser.parse_args(argv)
+    if not pcap_path.is_file():
+        parser.error(f"File not found: {pcap_path}")
 
     try:
-        results = analyse_capture(args.capture, args.output_dir)
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-    except PermissionError as exc:
-        print(f"Permission error: {exc}", file=sys.stderr)
-        return 1
+        results = analyse_pcap(pcap_path)
+    except Exception as error:
+        parser.error(f"Unable to read capture file: {error}")
 
-    print_summary(results)
-    return 0
+    print("=" * 48)
+    print("                 THREATNEXUS")
+    print("=" * 48)
+    print(f"File analysed: {pcap_path.name}")
+    print(f"Total packets: {results['packet_count']}")
+
+    print("\nPROTOCOL SUMMARY")
+    print("-" * 48)
+    if results["protocols"]:
+        for protocol, count in sorted(results["protocols"].items()):
+            print(f"{protocol}: {count}")
+    else:
+        print("No supported protocols decoded.")
+
+    print("\nIP COMMUNICATION SUMMARY")
+    print("-" * 48)
+    if results["ip_pairs"]:
+        for (source, destination), count in results["ip_pairs"].most_common():
+            print(f"{source} -> {destination} (packets: {count})")
+    else:
+        print("No decodable IPv4 or IPv6 packets found.")
+
+    print("\nDNS QUERY SUMMARY")
+    print("-" * 48)
+    if results["dns_queries"]:
+        for domain, count in results["dns_queries"].most_common():
+            print(f"{domain} (queries: {count})")
+    else:
+        print("No decodable DNS queries found.")
+
+    print("\nHEURISTIC FINDINGS")
+    print("-" * 48)
+    if results["findings"]:
+        for finding in results["findings"]:
+            print(f"Rule: {finding['rule']}")
+            print(f"Severity: {finding['severity']}")
+            if finding["source_ip"] or finding["destination_ip"]:
+                print(f"{finding['source_ip']} -> {finding['destination_ip']}")
+            print(f"Evidence: {finding['evidence']}")
+            print(f"Recommendation: {finding['recommendation']}")
+            print("-" * 48)
+    else:
+        print("No configured rules triggered. This does not prove the capture is benign.")
+
+    try:
+        report_paths = export_csv(results, Path(args.output_dir), pcap_path.stem)
+    except OSError as error:
+        parser.error(f"Unable to export CSV reports: {error}")
+
+    print("\nCSV REPORTS")
+    print("-" * 48)
+    for report_path in report_paths:
+        print(f"Created: {report_path}")
+    print("\nStatus: Analysis completed")
+    print("=" * 48)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
 
