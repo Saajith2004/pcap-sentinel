@@ -156,14 +156,15 @@ python -m unittest discover -s tests -v
 
 The tests use synthetic packet captures to check application behaviour without sending traffic over a network. The test suite covers:
 
-- IPv4 and UDP packet counting
-- Traffic to configured ports
-- DNS query extraction
-- Repeated DNS query detection
-- Possible TCP port-scan detection
-- CSV report generation
-- Empty capture handling
-
+1. IPv4 and UDP packet counting and protocol identification
+2. Traffic to configured ports
+3. DNS query extraction
+4. Repeated DNS query detection
+5. Possible TCP port-scan detection
+6. CSV report generation
+7. Empty capture handling
+8. Missing capture file handling
+   
 Run the tests after modifying the application to check that existing functionality still works.
 
 ## 📁 Project Structure
