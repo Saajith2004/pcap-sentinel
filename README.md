@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🛡️ PCAP Sentinel
+# 🛡️ ThreatNexus
 
-### Python-Based Network Traffic Analysis & Detection
+### Python-Based Network Traffic Analysis & Threat Detection
 
 **Inspect. Analyse. Investigate.**
 
@@ -12,7 +12,7 @@ A lightweight cybersecurity tool for analysing PCAP/PCAPNG captures, summarising
 ![Scapy](https://img.shields.io/badge/Scapy-Packet%20Analysis-2E8B57?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-16A34A?style=for-the-badge)
 
-**[Explore the Repository](https://github.com/Saajith2004/pcap-sentinel)**
+**[Explore the Repository](https://github.com/Saajith2004/threat-nexus)**
 
 </div>
 
@@ -20,7 +20,7 @@ A lightweight cybersecurity tool for analysing PCAP/PCAPNG captures, summarising
 
 ## 📌 Overview
 
-PCAP Sentinel is a Python-based network traffic analysis project developed to strengthen practical skills in cybersecurity, packet analysis, and security automation.
+ThreatNexus is a Python-based network traffic analysis project developed to strengthen practical skills in cybersecurity, packet analysis, and security automation.
 
 It reads network capture files and produces summaries of observed protocols, IP communications, and DNS queries. It also applies lightweight detection rules to identify traffic patterns that may deserve further investigation.
 
@@ -30,20 +30,19 @@ It reads network capture files and produces summaries of observed protocols, IP 
 
 ### 1. Network Traffic Analysis
 
-PCAP Sentinel analyses PCAP and PCAPNG files to summarise network traffic, identify communication patterns, extract DNS queries, and detect potentially suspicious activity. The tool generates CSV reports to support further investigation.
+ThreatNexus analyses PCAP and PCAPNG files to summarise network traffic, identify communication patterns, extract DNS queries, and detect potentially suspicious activity. The tool generates CSV reports to support further investigation.
 
 The screenshot below shows the tool analysing a sample PCAP file, displaying protocol statistics and IP communications, identifying traffic to a port of interest, and generating four CSV reports.
-![PCAP Sentinel Network Traffic Analysis](screenshots/pcap-sentinel-analysis.png)
+
+![ThreatNexus Network Traffic Analysis](screenshots/threat-nexus-analysis.png)
 
 ### 2. Automated Testing
 
-PCAP Sentinel includes seven automated unit tests to verify the reliability of its core functionality. The tests cover packet analysis, TCP port scan detection, repeated DNS query detection, DNS query extraction, traffic to ports of interest, CSV report generation, and empty-capture handling.
+ThreatNexus includes seven automated unit tests to verify the reliability of its core functionality. The tests cover packet analysis, TCP port scan detection, repeated DNS query detection, DNS query extraction, traffic to ports of interest, CSV report generation, and empty-capture handling.
 
-All seven unit tests passed successfully.
-![PCAP Sentinel Automated Test Results](screenshots/pcap-sentinel-tests.png)
+All seven unit tests passed successfully in the previously verified test run. Run the test command below after applying the rebranding changes to verify the current version.
 
-
-
+![ThreatNexus Automated Test Results](screenshots/threat-nexus-tests.png)
 
 ## ✨ Features
 
@@ -89,8 +88,8 @@ These are simple heuristics. Legitimate applications can produce similar pattern
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Saajith2004/pcap-sentinel.git
-cd pcap-sentinel
+git clone https://github.com/Saajith2004/threat-nexus.git
+cd threat-nexus
 ```
 
 ### 2. Create a virtual environment
@@ -121,7 +120,7 @@ pip install -r requirements.txt
 Place a capture file that you are authorised to analyse in the `samples/` directory, then run:
 
 ```bash
-python pcap_sentinel/main.py samples/example.pcap
+python threat_nexus/main.py samples/example.pcap
 ```
 
 Replace `example.pcap` with the name of your actual capture file.
@@ -129,14 +128,14 @@ Replace `example.pcap` with the name of your actual capture file.
 ### 5. Choose a report directory
 
 ```bash
-python pcap_sentinel/main.py samples/example.pcap --output-dir reports/example-run
+python threat_nexus/main.py samples/example.pcap --output-dir reports/example-run
 ```
 
 The application prints its analysis summary and the locations of the generated reports.
 
 ## 📊 Generated Reports
 
-PCAP Sentinel generates four CSV reports for each analysed capture.
+ThreatNexus generates four CSV reports for each analysed capture.
 
 | Report | Contents |
 |---|---|
@@ -170,12 +169,15 @@ Run the tests after modifying the application to check that existing functionali
 ## 📁 Project Structure
 
 ```text
-pcap-sentinel/
-├── pcap_sentinel/
+threat-nexus/
+├── threat_nexus/
 │   ├── __init__.py
 │   └── main.py
 ├── samples/                 # Authorised sample captures
 ├── reports/                 # Generated CSV reports
+├── screenshots/
+│   ├── threat-nexus-analysis.png
+│   └── threat-nexus-tests.png
 ├── tests/
 │   └── test_main.py
 ├── .gitignore
@@ -186,7 +188,7 @@ pcap-sentinel/
 
 ## ⚠️ Limitations
 
-PCAP Sentinel is an educational network analysis tool, not a replacement for a full network intrusion detection system.
+ThreatNexus is an educational network analysis tool, not a replacement for a full network intrusion detection system.
 
 - Port-based findings do not prove malicious activity.
 - DNS repetition is counted across the capture rather than within configurable time windows.
@@ -198,7 +200,7 @@ Validate findings using packet context and other appropriate security tools.
 
 ## 🔐 Responsible Use
 
-Use PCAP Sentinel only with network captures you own or have explicit permission to analyse. Do not publish captures or reports that expose private network information, credentials, or other sensitive data.
+Use ThreatNexus only with network captures you own or have explicit permission to analyse. Do not publish captures or reports that expose private IP addresses, credentials, or other sensitive data.
 
 ## 🛣️ Future Improvements
 
@@ -221,7 +223,7 @@ This project is part of my hands-on learning journey in cybersecurity, network t
 
 <div align="center">
 
-**[View PCAP Sentinel on GitHub](https://github.com/Saajith2004/pcap-sentinel)**
+**[View ThreatNexus on GitHub](https://github.com/Saajith2004/threat-nexus)**
 
 *Built to learn. Tested to improve. Designed to investigate.*
 
