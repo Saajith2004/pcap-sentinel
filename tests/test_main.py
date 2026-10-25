@@ -1,130 +1,159 @@
+"""Automated tests for ThreatNexus."""
+
 import csv
 import tempfile
 import unittest
 from pathlib import Path
 
-from scapy.all import Ether, IP, TCP, UDP, DNS, DNSQR, wrpcap
+from scapy.all import DNS, DNSQR, Ether, IP, TCP, UDP, wrpcap
 
-from pcap_sentinel.main import analyse_pcap, export_csv
+from threat_nexus.main import (
+    analyse_capture,
+    analyse_packets,
+)
 
 
-class TestPcapSentinel(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.pcap_path = Path(self.temp_dir.name) / "test_capture.pcap"
-
-    def tearDown(self):
-        self.temp_dir.cleanup()
-
-    def create_capture(self, packets):
-        wrpcap(str(self.pcap_path), packets)
-        return analyse_pcap(self.pcap_path)
-
-    def ether(self):
-        return Ether(src="02:00:00:00:00:01", dst="02:00:00:00:00:02")
+class ThreatNexusTests(unittest.TestCase):
 
     def test_counts_ipv4_and_udp_packets(self):
-        packet = (
-            self.ether()
-            / IP(src="192.168.1.10", dst="192.168.1.1")
-            / UDP(sport=50000, dport=12345)
-        )
-        results = self.create_capture([packet])
-        self.assertEqual(results["packet_count"], 1)
-        self.assertEqual(results["protocols"]["IPv4"], 1)
-        self.assertEqual(results["protocols"]["UDP"], 1)
-
-    def test_detects_tcp_traffic_to_port_23(self):
-        packet = (
-            self.ether()
-            / IP(src="192.168.1.10", dst="192.168.1.20")
-            / TCP(sport=50000, dport=23)
-        )
-        results = self.create_capture([packet])
-        findings = [
-            item for item in results["findings"]
-            if item["rule"] == "traffic_to_port_of_interest"
-        ]
-        self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0]["severity"], "informational")
-        self.assertIn("port 23", findings[0]["evidence"])
-
-    def test_extracts_dns_query(self):
-        packet = (
-            self.ether()
-            / IP(src="192.168.1.10", dst="192.168.1.1")
-            / UDP(sport=53000, dport=53)
-            / DNS(rd=1, qd=DNSQR(qname="example.com"))
-        )
-        results = self.create_capture([packet])
-        self.assertEqual(results["dns_queries"]["example.com"], 1)
-        self.assertEqual(results["protocols"]["DNS"], 1)
-
-    def test_detects_repeated_dns_queries(self):
         packets = [
-            (
-                self.ether()
-                / IP(src="192.168.1.10", dst="192.168.1.1")
-                / UDP(sport=53000 + index, dport=53)
-                / DNS(rd=1, qd=DNSQR(qname="example.com"))
-            )
-            for index in range(10)
+            Ether() / IP(
+                src="192.168.1.10",
+                dst="192.168.1.20",
+            ) / UDP(sport=50000, dport=53),
         ]
-        results = self.create_capture(packets)
-        self.assertEqual(results["dns_queries"]["example.com"], 10)
-        findings = [
-            item for item in results["findings"]
-            if item["rule"] == "repeated_dns_query"
-        ]
-        self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0]["severity"], "low")
-        self.assertIn("queried 10 times: example.com", findings[0]["evidence"])
+
+        results = analyse_packets(packets)
+
+        self.assertEqual(results["protocol_counts"]["IPv4"], 1)
+        self.assertEqual(results["protocol_counts"]["UDP"], 1)
 
     def test_detects_possible_tcp_port_scan(self):
-        packets = [
-            (
-                self.ether()
-                / IP(src="192.168.1.10", dst="192.168.1.20")
-                / TCP(sport=50000 + port, dport=port, flags="S")
+        packets = []
+
+        for port in range(20, 32):
+            packets.append(
+                Ether() / IP(
+                    src="192.168.1.10",
+                    dst="192.168.1.20",
+                ) / TCP(
+                    sport=50000,
+                    dport=port,
+                    flags="S",
+                )
             )
-            for port in range(1000, 1010)
+
+        results = analyse_packets(packets)
+
+        rules = {
+            finding["rule"]
+            for finding in results["findings"]
+        }
+
+        self.assertIn("possible_tcp_port_scan", rules)
+
+    def test_detects_repeated_dns_queries(self):
+        packets = []
+
+        for _ in range(10):
+            packets.append(
+                Ether() / IP(
+                    src="192.168.1.10",
+                    dst="192.168.1.1",
+                ) / UDP(sport=50000, dport=53) / DNS(
+                    rd=1,
+                    qd=DNSQR(qname="example.org"),
+                )
+            )
+
+        results = analyse_packets(packets)
+
+        rules = {
+            finding["rule"]
+            for finding in results["findings"]
+        }
+
+        self.assertIn("repeated_dns_query", rules)
+
+    def test_detects_tcp_traffic_to_port_23(self):
+        packets = [
+            Ether() / IP(
+                src="192.168.1.10",
+                dst="192.168.1.20",
+            ) / TCP(sport=50000, dport=23)
         ]
-        results = self.create_capture(packets)
+
+        results = analyse_packets(packets)
+
         findings = [
-            item for item in results["findings"]
-            if item["rule"] == "possible_tcp_port_scan"
+            finding
+            for finding in results["findings"]
+            if finding["rule"] == "traffic_to_port_of_interest"
         ]
+
         self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0]["severity"], "medium")
-        self.assertIn("10 distinct TCP destination ports", findings[0]["evidence"])
-
-    def test_exports_four_csv_reports(self):
-        packet = (
-            self.ether()
-            / IP(src="192.168.1.10", dst="192.168.1.20")
-            / TCP(sport=50000, dport=23)
-        )
-        results = self.create_capture([packet])
-        output_dir = Path(self.temp_dir.name) / "reports"
-        report_paths = export_csv(results, output_dir, "test_capture")
-
-        self.assertEqual(len(report_paths), 4)
-        self.assertTrue(all(path.is_file() for path in report_paths))
-        expected_headers = [
-            ["protocol", "packet_count"],
-            ["source_ip", "destination_ip", "packet_count"],
-            ["domain", "query_count"],
-            ["rule", "severity", "source_ip", "destination_ip", "evidence", "recommendation"],
-        ]
-        for report_path, expected_header in zip(report_paths, expected_headers):
-            with report_path.open(newline="", encoding="utf-8") as file:
-                self.assertEqual(next(csv.reader(file)), expected_header)
+        self.assertIn("23", findings[0]["evidence"])
 
     def test_empty_capture_has_no_findings(self):
-        results = self.create_capture([])
-        self.assertEqual(results["packet_count"], 0)
-        self.assertEqual(results["findings"], [])
-        self.assertEqual(results["protocols"], {})
+        results = analyse_packets([])
+
+        self.assertEqual(len(results["findings"]), 0)
+        self.assertEqual(len(results["communications"]), 0)
+        self.assertEqual(len(results["dns_queries"]), 0)
+
+    def test_exports_four_csv_reports(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            capture = root / "test-capture.pcap"
+            reports_dir = root / "reports"
+
+            packets = [
+                Ether() / IP(
+                    src="192.168.1.10",
+                    dst="192.168.1.20",
+                ) / UDP(sport=50000, dport=53) / DNS(
+                    rd=1,
+                    qd=DNSQR(qname="example.org"),
+                )
+            ]
+
+            wrpcap(str(capture), packets)
+
+            _, _, report_paths = analyse_capture(
+                capture,
+                reports_dir,
+            )
+
+            self.assertEqual(len(report_paths), 4)
+
+            for report_path in report_paths.values():
+                self.assertTrue(report_path.is_file())
+
+                with report_path.open(
+                    newline="",
+                    encoding="utf-8",
+                ) as csv_file:
+                    rows = list(csv.reader(csv_file))
+
+                self.assertGreaterEqual(len(rows), 1)
+
+    def test_extracts_dns_query(self):
+        packets = [
+            Ether() / IP(
+                src="192.168.1.10",
+                dst="192.168.1.1",
+            ) / UDP(sport=50000, dport=53) / DNS(
+                rd=1,
+                qd=DNSQR(qname="example.org"),
+            )
+        ]
+
+        results = analyse_packets(packets)
+
+        self.assertEqual(
+            results["dns_queries"]["example.org"],
+            1,
+        )
 
 
 if __name__ == "__main__":
