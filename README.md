@@ -28,13 +28,20 @@ It reads network capture files and produces summaries of observed protocols, IP 
 
 📸 Application in Action
 
-Network Traffic Analysis
+1. Network Traffic Analysis
 
-PCAP Sentinel analyses captured network traffic, summarises protocols and IP communications, extracts DNS queries, and identifies traffic patterns that may warrant further investigation.
+PCAP Sentinel analyses PCAP and PCAPNG files to summarise network traffic, identify communication patterns, extract DNS queries, and detect potentially suspicious activity. The tool generates CSV reports to support further investigation.
 
-Automated Testing
+The screenshot below shows the tool analysing a sample PCAP file, displaying protocol statistics and IP communications, identifying traffic to a port of interest, and generating four CSV reports.
+![PCAP Sentinel Network Traffic Analysis](screenshots/pcap-sentinel-analysis.png)
 
-The project includes seven automated unit tests covering packet analysis, DNS extraction, detection rules, CSV report generation, and empty-capture handling. All seven tests passed in the local test run shown below.
+2. Automated Testing
+
+PCAP Sentinel includes seven automated unit tests to verify the reliability of its core functionality. The tests cover packet analysis, TCP port scan detection, repeated DNS query detection, DNS query extraction, traffic to ports of interest, CSV report generation, and empty-capture handling.
+
+All seven unit tests passed successfully.
+![PCAP Sentinel Automated Test Results](screenshots/pcap-sentinel-tests.png)
+
 
 
 
