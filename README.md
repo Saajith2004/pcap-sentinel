@@ -1,29 +1,161 @@
-# PCAP Sentinel
+<div align="center">
 
-**PCAP Sentinel** is a Python command-line tool for inspecting PCAP/PCAPNG network captures, summarising observed traffic, and flagging simple indicators for further investigation. It is designed as a defensive cybersecurity learning and portfolio project.
+# 🛡️ PCAP Sentinel
 
-> **Important:** Findings are heuristic indicators, not proof of malicious activity. Only analyse packet captures you are authorised to inspect. The tool does not replace a full packet-analysis platform or a professional incident-response process.
+### Python-Based Network Traffic Analysis & Detection
 
-## Features
+**Inspect. Analyse. Investigate.**
 
-- Reads PCAP/PCAPNG captures through Scapy.
-- Summarises total packets and observed IPv4, IPv6, TCP, UDP, ICMP, and DNS layers.
-- Summarises source-to-destination IP communication.
-- Extracts DNS query names.
-- Flags TCP conversations involving at least 10 distinct destination ports as a **possible** port scan.
-- Flags a DNS name queried at least 10 times in a capture.
-- Reports traffic directed to a configurable-in-code set of ports of interest: TCP/UDP 22, 23, 445, 3389, and 4444.
-- Exports four CSV reports.
-- Includes automated unit tests using synthetic packets; tests do not send traffic onto a network.
+A lightweight cybersecurity tool for analysing PCAP/PCAPNG captures, summarising network communications, identifying potential indicators of suspicious activity, and generating CSV reports.
 
-## Project structure
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Scapy](https://img.shields.io/badge/Scapy-Packet%20Analysis-2E8B57?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-16A34A?style=for-the-badge)
+
+**[Explore the Repository](https://github.com/Saajith2004/pcap-sentinel)**
+
+</div>
+
+---
+
+## 📌 Overview
+
+PCAP Sentinel is a Python-based network traffic analysis project developed to strengthen practical skills in cybersecurity, packet analysis, and security automation.
+
+It reads network capture files and produces summaries of observed protocols, IP communications, and DNS queries. It also applies lightweight detection rules to identify traffic patterns that may deserve further investigation.
+
+> **Important:** Detection results are heuristic indicators, not proof of malicious activity. Investigate findings in the context of the environment and surrounding traffic.
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 📦 Packet Analysis | Read supported PCAP and PCAPNG captures using Scapy. |
+| 🌐 Protocol Summary | Count observed IPv4, IPv6, TCP, UDP, ICMP, and DNS layers. |
+| 🔄 IP Communications | Summarise packet counts between source and destination IP addresses. |
+| 🔎 DNS Analysis | Extract DNS query names and count repeated queries. |
+| 🚨 Port-Scan Heuristic | Flag source/destination pairs contacting many distinct TCP destination ports. |
+| 🎯 Port Monitoring | Identify traffic directed to configured ports of interest. |
+| 📊 CSV Reporting | Export protocol, IP communication, DNS query, and finding summaries. |
+| 🧪 Automated Testing | Verify analysis and reporting functions with synthetic packet captures. |
+
+## 🔍 Detection Rules
+
+| Rule | Detection condition | Severity |
+|---|---|---|
+| Possible TCP Port Scan | At least 10 distinct TCP destination ports for a source/destination IP pair | Medium |
+| Repeated DNS Query | The same DNS query name appears at least 10 times in the capture | Low |
+| Traffic to Port of Interest | Traffic targets TCP/UDP port 22, 23, 445, 3389, or 4444 | Informational |
+
+These are simple heuristics. Legitimate applications can produce similar patterns, and a port match alone does not establish that a service is malicious or vulnerable.
+
+## ⚙️ Technology Stack
+
+- **Language:** Python
+- **Packet analysis:** Scapy
+- **Data processing:** Python standard library
+- **Report generation:** CSV
+- **Testing:** Python `unittest`
+- **Version control:** Git and GitHub
+- **Development environment:** Visual Studio Code
+
+## 🚀 Getting Started
+
+### Requirements
+
+- Python 3.10 or newer
+- pip
+- Git
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Saajith2004/pcap-sentinel.git
+cd pcap-sentinel
+```
+
+### 2. Create a virtual environment
+
+**macOS / Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows PowerShell**
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+### 3. Install dependencies
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 4. Analyse a capture
+
+Place a capture file that you are authorised to analyse in the `samples/` directory, then run:
+
+```bash
+python pcap_sentinel/main.py samples/example.pcap
+```
+
+Replace `example.pcap` with the name of your actual capture file.
+
+### 5. Choose a report directory
+
+```bash
+python pcap_sentinel/main.py samples/example.pcap --output-dir reports/example-run
+```
+
+The application prints its analysis summary and the locations of the generated reports.
+
+## 📊 Generated Reports
+
+PCAP Sentinel generates four CSV reports for each analysed capture.
+
+| Report | Contents |
+|---|---|
+| `*_protocols.csv` | Protocol names and packet counts |
+| `*_ip_communications.csv` | Source IP, destination IP, and packet count |
+| `*_dns_queries.csv` | DNS query names and query counts |
+| `*_findings.csv` | Detection rule, severity, evidence, and recommendation |
+
+Reports can be opened in spreadsheet software for further analysis. Review them before sharing because they may contain sensitive IP addresses or domain names.
+
+## 🧪 Automated Testing
+
+Run the test suite from the repository root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests use synthetic packet captures to check application behaviour without sending traffic over a network. The test suite covers:
+
+- IPv4 and UDP packet counting
+- Traffic to configured ports
+- DNS query extraction
+- Repeated DNS query detection
+- Possible TCP port-scan detection
+- CSV report generation
+- Empty capture handling
+
+Run the tests after modifying the application to check that existing functionality still works.
+
+## 📁 Project Structure
 
 ```text
 pcap-sentinel/
 ├── pcap_sentinel/
 │   ├── __init__.py
 │   └── main.py
-├── samples/                 # Place authorised sample captures here
+├── samples/                 # Authorised sample captures
 ├── reports/                 # Generated CSV reports
 ├── tests/
 │   └── test_main.py
@@ -33,110 +165,45 @@ pcap-sentinel/
 └── requirements.txt
 ```
 
-## Requirements
+## ⚠️ Limitations
 
-- Python 3.10 or newer
-- pip
-- Scapy
+PCAP Sentinel is an educational network analysis tool, not a replacement for a full network intrusion detection system.
 
-## Setup
+- Port-based findings do not prove malicious activity.
+- DNS repetition is counted across the capture rather than within configurable time windows.
+- The port-scan rule uses a simple distinct-destination-port threshold.
+- Some capture link-layer formats may not expose decodable IP packets to Scapy.
+- The application does not currently provide a complete forensic chain-of-custody report.
 
-Clone your repository and enter the project directory:
+Validate findings using packet context and other appropriate security tools.
 
-```bash
-git clone https://github.com/Saajith2004/pcap-sentinel.git
-cd pcap-sentinel
-```
+## 🔐 Responsible Use
 
-Create and activate a virtual environment.
+Use PCAP Sentinel only with network captures you own or have explicit permission to analyse. Do not publish captures or reports that expose private network information, credentials, or other sensitive data.
 
-**macOS/Linux:**
+## 🛣️ Future Improvements
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
+Potential enhancements include:
 
-**Windows PowerShell:**
+- Configurable detection thresholds
+- Time-window-based traffic analysis
+- Source-aware DNS detection
+- JSON report exports
+- Expanded IPv6 transport analysis
+- Continuous integration for automated testing
+- Additional detection rules and test cases
 
-```powershell
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-```
+## 👨‍💻 Author
 
-Install the dependency:
+**Saajith**  
+Cybersecurity Student | Python Developer
 
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+This project is part of my hands-on learning journey in cybersecurity, network traffic analysis, and security automation.
 
-## Usage
+<div align="center">
 
-Run the tool with a capture file:
+**[View PCAP Sentinel on GitHub](https://github.com/Saajith2004/pcap-sentinel)**
 
-```bash
-python pcap_sentinel/main.py samples/example.pcap
-```
+*Built to learn. Tested to improve. Designed to investigate.*
 
-Choose a different output directory:
-
-```bash
-python pcap_sentinel/main.py samples/example.pcap --output-dir reports/example-run
-```
-
-The program prints a protocol summary, IP communication summary, DNS queries, heuristic findings, and the paths of generated reports.
-
-### Generated CSV reports
-
-For a capture named `example.pcap`, the default output directory contains:
-
-- `example_protocols.csv`
-- `example_ip_communications.csv`
-- `example_dns_queries.csv`
-- `example_findings.csv`
-
-Generated reports may contain IP addresses and queried domain names from the capture. Review them for sensitive information before sharing or committing them.
-
-## Detection rules
-
-| Rule | Default threshold / scope | Severity | Interpretation |
-|---|---|---|---|
-| `possible_tcp_port_scan` | At least 10 distinct TCP destination ports for a source/destination IP pair | Medium | May indicate scanning; legitimate tools and applications can produce similar patterns. |
-| `repeated_dns_query` | At least 10 queries for the same domain in the capture | Low | May be normal retry or application behaviour; investigate context. |
-| `traffic_to_port_of_interest` | Traffic to TCP/UDP ports 22, 23, 445, 3389, or 4444 | Informational | These ports can host legitimate services; a port match alone is not suspicious proof. |
-
-Thresholds are constants near the top of `pcap_sentinel/main.py`. Adjust them to suit a documented analysis context.
-
-## Run automated tests
-
-From the project root with the virtual environment activated:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-The tests generate temporary PCAP files containing synthetic packets and verify packet/protocol counts, DNS extraction, the heuristic rules, and CSV report headers. They do not generate live network traffic.
-
-## Limitations
-
-- This is a lightweight learning tool, not a full intrusion-detection system.
-- Port-based findings do not establish that a service is vulnerable or malicious.
-- Repeated DNS queries are counted across the capture; the tool does not currently group them by source IP or time window.
-- The port-scan heuristic counts distinct TCP destination ports per source/destination IP pair and does not distinguish all scanning patterns.
-- Captures with unsupported link-layer formats may not expose decodable IP layers in Scapy.
-- The program exports CSV summaries, not a complete forensic chain-of-custody report.
-
-## Responsible use
-
-Use only captures you own or have explicit permission to analyse. Treat captured IP addresses, DNS names, and exported reports as potentially sensitive data. Validate every alert against surrounding traffic and environmental context.
-
-## Roadmap
-
-Possible future improvements include source-aware DNS thresholds, time-window analysis, JSON output, configurable rule thresholds, richer IPv6 transport handling, and CI testing.
-
-## Author
-
-**Saajith** — cybersecurity student and developer.
-
-Project repository: https://github.com/Saajith2004/pcap-sentinel
+</div>
