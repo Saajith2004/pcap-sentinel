@@ -26,6 +26,18 @@ It reads network capture files and produces summaries of observed protocols, IP 
 
 > **Important:** Detection results are heuristic indicators, not proof of malicious activity. Investigate findings in the context of the environment and surrounding traffic.
 
+📸 Application in Action
+
+Network Traffic Analysis
+
+PCAP Sentinel analyses captured network traffic, summarises protocols and IP communications, extracts DNS queries, and identifies traffic patterns that may warrant further investigation.
+
+Automated Testing
+
+The project includes seven automated unit tests covering packet analysis, DNS extraction, detection rules, CSV report generation, and empty-capture handling. All seven tests passed in the local test run shown below.
+
+
+
 ## ✨ Features
 
 | Feature | Description |
